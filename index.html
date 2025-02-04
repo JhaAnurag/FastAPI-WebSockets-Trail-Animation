@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple Multiplayer Demo with Trails</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        padding: 0;
+        margin: 0;
+        -webkit-tap-highlight-color: transparent;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #ffffff;
+        font-family: monospace;
+      }
+      #trailCanvas {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        pointer-events: none;
+        z-index: 0;
+      }
+      .follower,
+      .remote {
+        position: absolute;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 2;
+      }
+      .follower {
+        background: hsl(341, 100%, 50%);
+      }
+      .remote {
+        background: #97ffe2;
+      }
+      .target {
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        background: #ff0000;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 3;
+      }
+      .remote-name,
+      .local-name {
+        position: absolute;
+        font-size: 14px;
+        color: #393939;
+        pointer-events: none;
+        padding: 4px;
+        border-radius: 8px;
+        backdrop-filter: blur(8px);
+        z-index: 2;
+      }
+
+      /* New and modified styles */
+      .toggle-button {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        padding: 8px 8px;
+        background: rgba(255, 255, 255, 0.532);
+        border: none;
+        /* width: 20px; */
+        /* height: 20px; */
+        border-radius: 50%;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 25px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        z-index: 11;
+        transition: all 0.3s ease;
+      }
+
+      .controls {
+        position: fixed;
+        top: 70px;
+        left: -320px;
+        width: 300px;
+        padding: 16px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.337);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        backdrop-filter: blur(10px);
+        z-index: 10;
+        transition: left 0.3s ease;
+        max-height: calc(100vh - 40px);
+        overflow-y: auto;
+      }
+
+      .controls.visible {
+        left: 10px;
+      }
+
+      .control-group {
+        margin-bottom: 16px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+      }
+
+      .control-group:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+      }
+
+      .control-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: bold;
+        color: #333;
+      }
+
+      .input-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      input[type="range"] {
+        flex: 1;
+        height: 6px;
+        background: #e0e0e0;
+        border-radius: 3px;
+      }
+
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 16px;
+        height: 16px;
+        background: #3498db;
+        border-radius: 50%;
+        cursor: pointer;
+      }
+
+      input[type="number"] {
+        width: 70px;
+        padding: 4px 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-family: monospace;
+      }
+
+      input[type="text"] {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-family: monospace;
+        margin-bottom: 8px;
+      }
+
+      input[type="color"] {
+        width: 40px;
+        height: 40px;
+        padding: 2px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+
+      /* Mobile-specific styles */
+      @media (max-width: 768px) {
+        .controls {
+          width: calc(100% - 40px);
+          max-width: none;
+          top: auto;
+          bottom: -100%;
+          left: 20px;
+          transition: bottom 0.3s ease;
+          max-height: 80vh;
+        }
+
+        .controls.visible {
+          bottom: 20px;
+          left: 20px;
+        }
+
+        .toggle-button {
+          bottom: 10px;
+          top: auto;
+        }
+
+        input[type="range"] {
+          height: 10px; /* Larger touch target */
+        }
+
+        input[type="number"],
+        input[type="text"] {
+          font-size: 16px; /* Prevent zoom on mobile */
+          padding: 8px;
+        }
+
+        .control-group label {
+          font-size: 14px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="trailCanvas"></canvas>
+    <div class="follower" id="follower"></div>
+    <div class="target" id="target"></div>
+    <div class="local-name" id="localName"></div>
+    <div id="remotes"></div>
+
+    <button class="toggle-button" id="toggleControls">⚙️</button>
+
+    <div class="controls" id="controlsPanel">
+      <div class="control-group">
+        <input
+          type="text"
+          id="nameInput"
+          placeholder="Enter name"
+          value="Player"
+        />
+      </div>
+      <div class="control-group">
+        <label>Frequency (f)</label>
+        <div class="input-row">
+          <input
+            type="range"
+            id="fSlider"
+            min="0"
+            max="10"
+            step="0.1"
+            value="2.5"
+          />
+          <input type="number" id="fInput" value="2.5" step="0.1" min="0" />
+        </div>
+      </div>
+      <div class="control-group">
+        <label>Damping (z)</label>
+        <div class="input-row">
+          <input
+            type="range"
+            id="zSlider"
+            min="0"
+            max="2"
+            step="0.05"
+            value="0.65"
+          />
+          <input type="number" id="zInput" value="0.65" step="0.05" min="0" />
+        </div>
+      </div>
+      <div class="control-group">
+        <label>Response (r)</label>
+        <div class="input-row">
+          <input
+            type="range"
+            id="rSlider"
+            min="-2"
+            max="2"
+            step="0.05"
+            value="1.0"
+          />
+          <input type="number" id="rInput" value="1.0" step="0.05" />
+        </div>
+      </div>
+      <div class="control-group">
+        <label>Trail Length (s)</label>
+        <div class="input-row">
+          <input
+            type="range"
+            id="trailLengthSlider"
+            min="0"
+            max="5"
+            step="0.1"
+            value="1.0"
+          />
+          <input
+            type="number"
+            id="trailLengthInput"
+            value="1.0"
+            step="0.1"
+            min="0"
+          />
+        </div>
+      </div>
+      <div class="control-group">
+        <div class="input-row">
+          <label>Trail Color</label>
+          <input type="color" id="trailColorInput" value="#3498db" />
+          <label>Circle Color</label>
+          <input type="color" id="circleColorInput" value="#3498db" />
+          <label>Rainbow</label>
+          <input type="checkbox" id="rainbowTrailInput" />
+        </div>
+      </div>
+    </div>
+
+    <script>
+      class Vector2 {
+        constructor(x = 0, y = 0) {
+          this.x = x;
+          this.y = y;
+        }
+        add(v) {
+          return new Vector2(this.x + v.x, this.y + v.y);
+        }
+        subtract(v) {
+          return new Vector2(this.x - v.x, this.y - v.y);
+        }
+        multiply(s) {
+          return new Vector2(this.x * s, this.y * s);
+        }
+        divide(s) {
+          return new Vector2(this.x / s, this.y / s);
+        }
+      }
+
+      class SecondOrderDynamics {
+        constructor(f, z, r, x0) {
+          this.updateConstants(f, z, r);
+          this.xp = x0;
+          this.y = x0;
+          this.yd = new Vector2();
+        }
+        updateConstants(f, z, r) {
+          const safeF = Math.max(f, 0.0001);
+          this.k1 = z / (Math.PI * safeF);
+          this.k2 = 1 / (4 * Math.PI * Math.PI * safeF * safeF);
+          this.k3 = (r * z) / (2 * Math.PI * safeF);
+        }
+        update(T, x, xd = null) {
+          if (!xd) {
+            xd = x.subtract(this.xp).divide(T);
+            this.xp = x;
+          }
+          this.y = this.y.add(this.yd.multiply(T));
+          const acceleration = x
+            .add(xd.multiply(this.k3))
+            .subtract(this.y)
+            .subtract(this.yd.multiply(this.k1))
+            .divide(this.k2);
+          this.yd = this.yd.add(acceleration.multiply(T));
+          return this.y;
+        }
+      }
+
+      const clientId = Math.random().toString(36).substring(2, 15);
+
+      document.addEventListener("DOMContentLoaded", () => {
+        const follower = document.getElementById("follower");
+        const target = document.getElementById("target");
+        const localName = document.getElementById("localName");
+        const remotesContainer = document.getElementById("remotes");
+        const trailCanvas = document.getElementById("trailCanvas");
+        const ctx = trailCanvas.getContext("2d");
+
+        function resizeCanvas() {
+          trailCanvas.width = window.innerWidth;
+          trailCanvas.height = window.innerHeight;
+        }
+        window.addEventListener("resize", resizeCanvas);
+        resizeCanvas();
+
+        const controls = {
+          f: {
+            slider: document.getElementById("fSlider"),
+            input: document.getElementById("fInput"),
+          },
+          z: {
+            slider: document.getElementById("zSlider"),
+            input: document.getElementById("zInput"),
+          },
+          r: {
+            slider: document.getElementById("rSlider"),
+            input: document.getElementById("rInput"),
+          },
+          name: document.getElementById("nameInput"),
+          trailLength: {
+            slider: document.getElementById("trailLengthSlider"),
+            input: document.getElementById("trailLengthInput"),
+          },
+          trailColor: document.getElementById("trailColorInput"),
+          circleColor: document.getElementById("circleColorInput"),
+          rainbowTrail: document.getElementById("rainbowTrailInput"),
+        };
+
+        const lastSent = {
+          f: parseFloat(controls.f.input.value),
+          z: parseFloat(controls.z.input.value),
+          r: parseFloat(controls.r.input.value),
+          name: controls.name.value,
+          trailLength: parseFloat(controls.trailLength.input.value),
+          trailColor: controls.trailColor.value,
+          circleColor: controls.circleColor.value,
+          rainbowTrail: controls.rainbowTrail.checked,
+        };
+
+        function clampNonNegative(value) {
+          return Math.max(0, value);
+        }
+
+        function syncInputs(param, value) {
+          const finalValue = param === "r" ? value : clampNonNegative(value);
+          controls[param].slider.value = finalValue;
+          controls[param].input.value = finalValue;
+        }
+
+        function updateDynamics() {
+          const f = clampNonNegative(parseFloat(controls.f.input.value) || 0);
+          const z = clampNonNegative(parseFloat(controls.z.input.value) || 0);
+          const r = parseFloat(controls.r.input.value) || 0;
+          dynamics.updateConstants(f, z, r);
+        }
+
+        ["f", "z", "r"].forEach((key) => {
+          controls[key].slider.addEventListener("input", (e) => {
+            syncInputs(key, e.target.value);
+            updateDynamics();
+          });
+          controls[key].input.addEventListener("input", (e) => {
+            syncInputs(key, e.target.value);
+            updateDynamics();
+          });
+        });
+
+        ["trailLength"].forEach((key) => {
+          controls[key].slider.addEventListener("input", (e) => {
+            syncInputs(key, e.target.value);
+          });
+          controls[key].input.addEventListener("input", (e) => {
+            syncInputs(key, e.target.value);
+          });
+        });
+
+        let pointerPos = new Vector2();
+        const dynamics = new SecondOrderDynamics(2.5, 0.65, 1.0, new Vector2());
+        let localTrail = [];
+        let remoteClients = {};
+
+        document.addEventListener("mousemove", (e) => {
+          pointerPos = new Vector2(e.clientX, e.clientY);
+          target.style.left = `${pointerPos.x}px`;
+          target.style.top = `${pointerPos.y}px`;
+        });
+        document.addEventListener(
+          "touchmove",
+          (e) => {
+            e.preventDefault();
+            if (e.touches.length > 0) {
+              const touch = e.touches[0];
+              pointerPos = new Vector2(touch.clientX, touch.clientY);
+              target.style.left = `${pointerPos.x}px`;
+              target.style.top = `${pointerPos.y}px`;
+            }
+          },
+          { passive: false }
+        );
+
+        const ws = new WebSocket(`ws://${location.host}/ws`);
+        ws.onopen = () => {
+          console.log("WebSocket connected");
+        };
+        ws.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+          if (message.type === "update") {
+            message.clients.forEach((clientData) => {
+              if (clientData.id === clientId) return;
+              if (!remoteClients[clientData.id]) {
+                const f = clientData.f !== undefined ? clientData.f : 2.5;
+                const z = clientData.z !== undefined ? clientData.z : 0.65;
+                const r = clientData.r !== undefined ? clientData.r : 1.0;
+                const name =
+                  clientData.name !== undefined ? clientData.name : "Unnamed";
+                const tLength =
+                  clientData.trailLength !== undefined
+                    ? clientData.trailLength
+                    : 1.0;
+                const tColor =
+                  clientData.trailColor !== undefined
+                    ? clientData.trailColor
+                    : "#3498db";
+                const cColor =
+                  clientData.circleColor !== undefined
+                    ? clientData.circleColor
+                    : "#3498db";
+                const rainbow =
+                  clientData.rainbowTrail !== undefined
+                    ? clientData.rainbowTrail
+                    : false;
+
+                remoteClients[clientData.id] = {
+                  f,
+                  z,
+                  r,
+                  name,
+                  trailLength: tLength,
+                  trailColor: tColor,
+                  circleColor: cColor,
+                  rainbowTrail: rainbow,
+                  dynamics: new SecondOrderDynamics(
+                    f,
+                    z,
+                    r,
+                    new Vector2(clientData.x, clientData.y)
+                  ),
+                  target: new Vector2(clientData.x, clientData.y),
+                  element: document.createElement("div"),
+                  nameElement: document.createElement("div"),
+                  trail: [],
+                };
+                remoteClients[clientData.id].element.className = "remote";
+                remoteClients[clientData.id].element.style.backgroundColor =
+                  cColor;
+                remoteClients[clientData.id].nameElement.className =
+                  "remote-name";
+                remoteClients[clientData.id].nameElement.textContent = name;
+                remotesContainer.appendChild(
+                  remoteClients[clientData.id].element
+                );
+                remotesContainer.appendChild(
+                  remoteClients[clientData.id].nameElement
+                );
+              } else {
+                if (clientData.f !== undefined)
+                  remoteClients[clientData.id].f = clientData.f;
+                if (clientData.z !== undefined)
+                  remoteClients[clientData.id].z = clientData.z;
+                if (clientData.r !== undefined)
+                  remoteClients[clientData.id].r = clientData.r;
+                if (clientData.name !== undefined)
+                  remoteClients[clientData.id].name = clientData.name;
+                if (clientData.trailLength !== undefined)
+                  remoteClients[clientData.id].trailLength =
+                    clientData.trailLength;
+                if (clientData.trailColor !== undefined)
+                  remoteClients[clientData.id].trailColor =
+                    clientData.trailColor;
+                if (clientData.circleColor !== undefined) {
+                  remoteClients[clientData.id].circleColor =
+                    clientData.circleColor;
+                  remoteClients[clientData.id].element.style.backgroundColor =
+                    clientData.circleColor;
+                }
+                if (clientData.rainbowTrail !== undefined)
+                  remoteClients[clientData.id].rainbowTrail =
+                    clientData.rainbowTrail;
+                remoteClients[clientData.id].dynamics.updateConstants(
+                  remoteClients[clientData.id].f,
+                  remoteClients[clientData.id].z,
+                  remoteClients[clientData.id].r
+                );
+                remoteClients[clientData.id].target = new Vector2(
+                  clientData.x,
+                  clientData.y
+                );
+                remoteClients[clientData.id].nameElement.textContent =
+                  remoteClients[clientData.id].name;
+              }
+            });
+            const activeIds = message.clients.map((c) => c.id);
+            Object.keys(remoteClients).forEach((id) => {
+              if (!activeIds.includes(id)) {
+                remotesContainer.removeChild(remoteClients[id].element);
+                remotesContainer.removeChild(remoteClients[id].nameElement);
+                delete remoteClients[id];
+              }
+            });
+          }
+        };
+
+        let lastTime = performance.now();
+        let sendInterval = 0;
+        function animate(currentTime) {
+          const deltaTime = Math.min((currentTime - lastTime) / 1000, 0.1);
+          lastTime = currentTime;
+
+          const localTrailLifetime = parseFloat(
+            controls.trailLength.input.value
+          );
+          const safeLocalTrailLifetime =
+            localTrailLifetime > 0 ? localTrailLifetime : 0.0001;
+
+          const newPos = dynamics.update(deltaTime, pointerPos);
+          follower.style.left = `${newPos.x}px`;
+          follower.style.top = `${newPos.y}px`;
+          follower.style.backgroundColor = controls.circleColor.value;
+          localName.style.left = `${pointerPos.x - 20}px`;
+          localName.style.top = `${pointerPos.y + 20}px`;
+          localName.textContent = controls.name.value;
+
+          const nowSec = performance.now() / 1000;
+          localTrail.push({ x: newPos.x, y: newPos.y, t: nowSec });
+          localTrail = localTrail.filter(
+            (pt) => nowSec - pt.t < localTrailLifetime
+          );
+
+          Object.keys(remoteClients).forEach((id) => {
+            const remote = remoteClients[id];
+            const pos = remote.dynamics.update(deltaTime, remote.target);
+            remote.element.style.left = `${pos.x}px`;
+            remote.element.style.top = `${pos.y}px`;
+            remote.nameElement.style.left = `${remote.target.x - 20}px`;
+            remote.nameElement.style.top = `${remote.target.y + 20}px`;
+            if (!remote.trail) remote.trail = [];
+            remote.trail.push({ x: pos.x, y: pos.y, t: nowSec });
+            remote.trail = remote.trail.filter(
+              (pt) => nowSec - pt.t < remote.trailLength
+            );
+          });
+
+          ctx.clearRect(0, 0, trailCanvas.width, trailCanvas.height);
+
+          function drawTrail(trailArray, baseColor, rainbow, trailLifetime) {
+            const safeLifetime = trailLifetime > 0 ? trailLifetime : 0.0001;
+            trailArray.forEach((pt) => {
+              const age = nowSec - pt.t;
+              const alpha = 1 - age / safeLifetime;
+              const radius = 20 * alpha;
+              let fillStyle;
+              if (rainbow) {
+                const hue = ((pt.t * 360) / safeLifetime) % 360;
+                fillStyle = `hsla(${hue}, 100%, 50%, ${alpha})`;
+              } else {
+                fillStyle = hexToRgba(baseColor, alpha);
+              }
+              ctx.beginPath();
+              ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
+              ctx.fillStyle = fillStyle;
+              ctx.fill();
+            });
+          }
+
+          function hexToRgba(hex, alpha) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+          }
+
+          const localRainbow = controls.rainbowTrail.checked;
+          const localTrailColor = controls.trailColor.value;
+          drawTrail(
+            localTrail,
+            localTrailColor,
+            localRainbow,
+            safeLocalTrailLifetime
+          );
+
+          Object.values(remoteClients).forEach((remote) => {
+            drawTrail(
+              remote.trail,
+              remote.trailColor,
+              remote.rainbowTrail,
+              remote.trailLength
+            );
+          });
+
+          sendInterval += deltaTime;
+          if (sendInterval > 0.016 && ws.readyState === WebSocket.OPEN) {
+            let data = {
+              id: clientId,
+              x: pointerPos.x,
+              y: pointerPos.y,
+            };
+            const currentF = parseFloat(controls.f.input.value);
+            const currentZ = parseFloat(controls.z.input.value);
+            const currentR = parseFloat(controls.r.input.value);
+            const currentName = controls.name.value;
+            const currentTrailLength = parseFloat(
+              controls.trailLength.input.value
+            );
+            const currentTrailColor = controls.trailColor.value;
+            const currentCircleColor = controls.circleColor.value;
+            const currentRainbowTrail = controls.rainbowTrail.checked;
+
+            if (currentF !== lastSent.f) {
+              data.f = currentF;
+              lastSent.f = currentF;
+            }
+            if (currentZ !== lastSent.z) {
+              data.z = currentZ;
+              lastSent.z = currentZ;
+            }
+            if (currentR !== lastSent.r) {
+              data.r = currentR;
+              lastSent.r = currentR;
+            }
+            if (currentName !== lastSent.name) {
+              data.name = currentName;
+              lastSent.name = currentName;
+            }
+            if (currentTrailLength !== lastSent.trailLength) {
+              data.trailLength = currentTrailLength;
+              lastSent.trailLength = currentTrailLength;
+            }
+            if (currentTrailColor !== lastSent.trailColor) {
+              data.trailColor = currentTrailColor;
+              lastSent.trailColor = currentTrailColor;
+            }
+            if (currentCircleColor !== lastSent.circleColor) {
+              data.circleColor = currentCircleColor;
+              lastSent.circleColor = currentCircleColor;
+            }
+            if (currentRainbowTrail !== lastSent.rainbowTrail) {
+              data.rainbowTrail = currentRainbowTrail;
+              lastSent.rainbowTrail = currentRainbowTrail;
+            }
+
+            ws.send(JSON.stringify(data));
+            sendInterval = 0;
+          }
+          requestAnimationFrame(animate);
+        }
+        requestAnimationFrame(animate);
+      });
+    </script>
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const toggleButton = document.getElementById("toggleControls");
+        const controlsPanel = document.getElementById("controlsPanel");
+        let isControlsVisible = false;
+
+        toggleButton.addEventListener("click", () => {
+          isControlsVisible = !isControlsVisible;
+          controlsPanel.classList.toggle("visible");
+          toggleButton.textContent = isControlsVisible ? "❎" : "⚙️";
+        });
+
+        document.addEventListener("click", (e) => {
+          if (
+            !controlsPanel.contains(e.target) &&
+            !toggleButton.contains(e.target) &&
+            isControlsVisible
+          ) {
+            isControlsVisible = false;
+            controlsPanel.classList.remove("visible");
+            toggleButton.textContent = "⚙️";
+          }
+        });
+
+        controlsPanel.addEventListener("click", (e) => {
+          e.stopPropagation();
+        });
+      });
+    </script>
+  </body>
+</html>
