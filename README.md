@@ -40,7 +40,7 @@ A simple real-time multiplayer demo showcasing trail animation using FastAPI, We
 
 1. Clone this repository:
    ```bash
-   git clone <repository_url>
+   git clone https://github.com/JhaAnurag/FastAPI-WebSockets-Trail-Animation.git
    cd FastAPI-WebSockets-Trail-Animation
    ```
 
