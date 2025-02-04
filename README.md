@@ -55,12 +55,6 @@ A simple real-time multiplayer demo showcasing trail animation using FastAPI, We
    ```bash
    pip install -r requirements.txt
    ```
-   *(Create a `requirements.txt` file in the project root with the following content if it doesn't exist)*:
-   ```
-   fastapi
-   uvicorn
-   orjson
-   ```
 
 **Running the Server:**
 
